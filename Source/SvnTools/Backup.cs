@@ -14,7 +14,7 @@ namespace SvnTools
     public static class Backup
     {
         #region Logging Definition
-        private static readonly log4net.ILog _log = log4net.LogManager.GetLogger(typeof(Backup));
+        private static readonly log4net.ILog Log = log4net.LogManager.GetLogger(typeof(Backup));
         #endregion
 
         /// <summary>
@@ -24,6 +24,7 @@ namespace SvnTools
         public static void Run(BackupArguments args)
         {
             var repoRoot = new DirectoryInfo(args.RepositoryRoot);
+
             if (!repoRoot.Exists)
                 throw new InvalidOperationException(string.Format(
                     "The repository root directory '{0}' does not exist.",
@@ -36,6 +37,7 @@ namespace SvnTools
             // first try repoRoot as a repository
             if (PathHelper.IsRepository(repoRoot.FullName))
                 BackupRepository(args, repoRoot, backupRoot);
+
             // next try as partent folder for repositories
             else
                 foreach (var repo in repoRoot.GetDirectories())
@@ -49,7 +51,10 @@ namespace SvnTools
                 string revString = GetRevision(args, repository);
 
                 if (string.IsNullOrEmpty(revString))
+                {
+                    Log.Info(string.Format("rev string is null in {0}", repository));
                     return; // couldn't find repo
+                }
 
                 string backupRepoPath = Path.Combine(backupRoot.FullName, repository.Name);
                 string backupRevPath = Path.Combine(backupRepoPath, revString);
@@ -58,41 +63,63 @@ namespace SvnTools
                 if (!Directory.Exists(backupRepoPath))
                     Directory.CreateDirectory(backupRepoPath);
 
-                if (Directory.Exists(backupRevPath) || File.Exists(backupZipPath))
-                    return; // this rev is already backed up
+                if (File.Exists(backupZipPath))
+                {
+                    Log.Info(string.Format("this rev is already backed up, dir:{0}", backupRevPath)); // this rev is already backed up
+                    return;
+                }
 
-                // hotcopy
-                _log.InfoFormat("Backing up '{0}' from '{1}'.", revString, repository.Name);
-                RunHotCopy(args, repository, backupRevPath);
+                if (!Directory.Exists(backupRevPath))
+                {
+                    // hotcopy
+                    Log.InfoFormat("Backing up '{0}' from '{1}'.", revString, repository.Name);
+                    RunHotCopy(args, repository, backupRevPath);
+                }
+                else
+                {
+                    Log.Info(string.Format("this rev is already backed up, dir:{0}", backupRevPath)); // this rev is already backed up
+                }
 
                 // compress
-                if (args.Compress && !File.Exists(backupZipPath))
+                if (args.Compress)
+                {
+                    Log.Info(string.Format("Compressing {0}", backupZipPath));
                     CompressBackup(backupRevPath, backupZipPath);
+                }
+                else
+                {
+                    Log.Info("compress not active");
+                }
 
+                Log.Info(string.Format("Purging dir {0}", backupRepoPath));
                 // purge old
                 PruneBackups(backupRepoPath, args.History);
             }
             catch (Exception ex)
             {
-                _log.Error(ex.Message, ex);
+                Log.Error(ex.Message, ex);
             }
         }
 
         private static void RunHotCopy(BackupArguments args, DirectoryInfo repo, string backupRevPath)
         {
+            var tempDir = backupRevPath + "Temp";
+
             using (var hotCopy = new HotCopy())
             {
                 if (!string.IsNullOrEmpty(args.SubverisonPath))
                     hotCopy.ToolPath = args.SubverisonPath;
 
-                hotCopy.BackupPath = backupRevPath;
+                hotCopy.BackupPath = tempDir;
                 hotCopy.RepositoryPath = repo.FullName;
 
                 hotCopy.Execute();
 
                 if (!string.IsNullOrEmpty(hotCopy.StandardError))
-                    _log.Info(hotCopy.StandardError);
+                    Log.Info(hotCopy.StandardError);
             }
+
+            Directory.Move(tempDir, backupRevPath);
         }
 
         private static string GetRevision(BackupArguments args, DirectoryInfo repo)
@@ -108,14 +135,14 @@ namespace SvnTools
 
                 look.Execute();
                 if (!string.IsNullOrEmpty(look.StandardError))
-                    _log.Info(look.StandardError);
+                    Log.Info(look.StandardError);
 
                 if (!look.TryGetRevision(out rev))
                 {
-                    _log.WarnFormat("'{0}' is not a repository.", repo.Name);
+                    Log.WarnFormat("'{0}' is not a repository.", repo.Name);
 
                     if (!string.IsNullOrEmpty(look.StandardOutput))
-                        _log.Info(look.StandardOutput);
+                        Log.Info(look.StandardOutput);
 
                     return null;
                 }
@@ -152,7 +179,7 @@ namespace SvnTools
                     string dir = dirs[i];
 
                     PathHelper.DeleteDirectory(dir);
-                    _log.InfoFormat("Removed backup '{0}'.", dir);
+                    Log.InfoFormat("Removed backup '{0}'.", dir);
                 }
             }
 
@@ -164,7 +191,7 @@ namespace SvnTools
                     string file = files[i];
 
                     File.Delete(file);
-                    _log.InfoFormat("Removed backup '{0}'.", file);
+                    Log.InfoFormat("Removed backup '{0}'.", file);
                 }
             }
         }
