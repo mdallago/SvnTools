@@ -1,6 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Text;
+using log4net;
 using SvnTools;
 using SvnTools.CommandLine;
 
@@ -10,8 +10,14 @@ namespace SvnBackup
 {
     class Program
     {
+        private static readonly ILog Log = LogManager.GetLogger(typeof(Program));
+
         static int Main(string[] args)
         {
+
+            AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
+
+            Log.Info("Current Dir:" + Environment.CurrentDirectory);
             if (Parser.ParseHelp(args))
             {
                 OutputHeader();
@@ -32,6 +38,11 @@ namespace SvnBackup
             Backup.Run(arguments);
 
             return 0;
+        }
+
+        private static void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
+        {
+            Log.Fatal("Unhandled exception:" + e.ExceptionObject);
         }
 
         private static void OutputUsageHelp()
